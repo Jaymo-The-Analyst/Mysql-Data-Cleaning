@@ -47,54 +47,156 @@ The data cleaning steps include:
 4. **Identifying and Handling Outliers**: Filtering out anomalous transactions that could affect the fraud detection model.
 5. **Validating Payment Data**: Identifying invalid payments or errors in the transaction data.
 
-### How to Run the Project
+## How to Run the Project
 
 Follow these steps to run the project on your local machine:
 
 ### 1. **Clone the Repository**
 
-Clone the repository to your local machine using Git:
+Initial Setup and Cloning
 
-``bash
-git clone https://github.com/Jaymo-The-Analyst/Mysql-Data-Cleaning.git
+Clone this repository:
 
+```bash
+git clone https://github.com/your-username/mysql-data-cleaning.git
+```
+Set up MySQL if it’s not already installed. Import your dataset to start working on data cleaning.
 
-### 2. **Set Up MySQL Database**
-Ensure that you have MySQL installed on your local machine or set up a MySQL instance in the cloud.
+-----
 
-- If MySQL is not installed, you can download it from [here](https://dev.mysql.com/downloads/installer/).
-- Create a new database for the project (e.g., `fraud_detection`):
+## 2. Initial Exploration
+
+View All Data:
+```sql
+SELECT * FROM locard_comms.transactions_1;
+```
+
+Create a Backup Table for Safety:
 
 ```sql
-CREATE DATABASE fraud_detection;
+CREATE TABLE transactions_2 AS
+SELECT * FROM transactions_1;
+```
 
-
-
-
-
-
-
-
-
-### 2. **Set Up MySQL Database**
-
-Ensure that you have MySQL installed on your local machine or set up a MySQL instance in the cloud.
-
-- If MySQL is not installed, you can download it from [here](https://dev.mysql.com/downloads/installer/).
-- Create a new database for the project (e.g., `fraud_detection`):
+Check for Missing Values:
 
 ```sql
-CREATE DATABASE fraud_detection;
+SELECT * FROM transactions_1
+WHERE step IS NULL OR type IS NULL OR amount IS NULL 
+OR nameOrig IS NULL OR oldbalanceOrg IS NULL 
+OR newbalanceOrig IS NULL OR nameDest IS NULL 
+OR oldbalanceDest IS NULL OR newbalanceDest IS NULL 
+OR isFraud IS NULL OR isFlaggedFraud IS NULL;
+```
 
+Check Column Information and Data Types:
 
+```sql
+DESCRIBE transactions_1;
+```
 
+Set Boolean Columns Using `TINYINT(1):`
+```sql
+ALTER TABLE transactions_1 MODIFY COLUMN isFraud TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE transactions_1 MODIFY COLUMN isFlaggedFraud TINYINT(1) NOT NULL DEFAULT 0;
+```
+---
 
+## 3. Basic Data Cleaning and Summary Analysis
 
+Calculate Summary Statistics for Numeric Columns:
+```sql
+SELECT AVG(amount), MIN(amount), MAX(amount), 
+AVG(oldbalanceOrg), AVG(newbalanceOrig), 
+AVG(oldbalanceDest), AVG(newbalanceDest) 
+FROM transactions_1;
+```
 
+Identify Suspicious Transactions:
+```sql
+SELECT * FROM locard_comms.transactions_1 WHERE amount = 0.32;
+```
 
+Check for Duplicate Records:
+```sql
+SELECT nameOrig, nameDest, COUNT(*)
+FROM transactions_1
+GROUP BY step, amount, nameOrig, nameDest
+HAVING COUNT(*) > 1;
+```
 
+## 4. Structuring Data for Deeper Analysis
 
+Set Primary Keys:
+```sql
+ALTER TABLE transactions_1 ADD PRIMARY KEY (nameOrig(50), nameDest(50));
+```
 
+Create a Subset Table for Payment Data:
+```sql
+CREATE TABLE payment AS
+SELECT * FROM transactions_1 WHERE type = 'payment';
+```
+
+## 5. Further Cleaning and exploratin on Payment Table
+Check for Null Values in `payment` Table:
+```sql
+SELECT * FROM payment WHERE step IS NULL OR type IS NULL 
+OR amount IS NULL OR nameOrig IS NULL 
+OR oldbalanceOrg IS NULL OR newbalanceOrig IS NULL 
+OR nameDest IS NULL OR oldbalanceDest IS NULL 
+OR newbalanceDest IS NULL OR isFraud IS NULL 
+OR isFlaggedFraud IS NULL;
+```
+
+Verify Clean Payment Records:
+```sql
+SELECT * FROM payment WHERE newbalanceOrig = oldbalanceOrg - amount;
+```
+
+Identify Fraudulent Transactions:
+```sql
+SELECT * FROM payment WHERE newbalanceOrig = oldbalanceOrg - amount AND isFraud = 1;
+```
+
+Create a `clean_payment` Table for Clean Records:
+```sql
+CREATE TABLE clean_payment AS
+SELECT * FROM payment WHERE newbalanceOrig = oldbalanceOrg - amount;
+```
+
+Move Similar Records to `clean_payment` with Minor Discrepancies:
+```sql
+INSERT INTO clean_payment
+SELECT * FROM payment
+WHERE ABS(newbalanceOrig - (oldbalanceOrg - amount)) <= 1.00;
+```
+
+Delete Records from payment That Were Added to clean_payment:
+```sql
+DELETE FROM payment WHERE ABS(newbalanceOrig - (oldbalanceOrg - amount)) <= 1.00;
+```
+
+## 6. Identify and Separate Invalid Payments
+Identify Invalid Payments:
+```sql
+SELECT * FROM payment WHERE amount > oldbalanceOrg;
+```
+
+Create `invalid_payment` Table from Invalid Records:
+```sql
+CREATE TABLE invalid_payment AS SELECT * FROM payment WHERE amount > oldbalanceOrg;
+```
+
+Remove Invalid Payments from payment Table:
+```sql
+DELETE FROM payment WHERE amount > oldbalanceOrg;
+```
+
+Create and Populate Fraud Table:
+```sql
+CREATE TABLE fraud AS SELECT * FROM payment;
+```
 
 ### License
 
